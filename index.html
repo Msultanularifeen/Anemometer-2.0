@@ -102,7 +102,6 @@
       gap: 1.05rem;
     }
 
-    /* Architectural Instrument Panel */
     .panel {
       position: relative;
       background: var(--panel);
@@ -447,6 +446,7 @@
       font-size: 0.75rem;
       color: var(--muted);
       font-weight: 500;
+      margin-top: 2px;
     }
 
     /* Avionics Dial */
@@ -1273,7 +1273,7 @@
           <span id="statusText">Connecting</span>
         </div>
 
-        <!-- Hidden until unlocked with 4-digit PIN -->
+        <!-- Hidden until unlocked with 4-digit PIN; auto-hides when turned On -->
         <button class="btn" id="demoToggleBtn">Demo: Off</button>
 
         <button class="btn" id="themeToggleBtn" aria-label="Toggle Light or Dark Mode">
@@ -1315,6 +1315,7 @@
           <div>
             <div class="kicker">Primary Transducer</div>
             <div class="card-title">Airflow Velocity</div>
+            <div class="card-sub" id="stationSourceSub" style="display: none;"></div>
           </div>
           <span class="card-sub num" id="gaugeScaleLabel">0–30 m/s</span>
         </div>
@@ -1337,7 +1338,6 @@
               stroke-dasharray="490.1 653.45"
               transform="rotate(135 130 120)"
             />
-            <!-- r=90, C=565.49, 270deg=424.12 -->
             <circle
               class="dial-track"
               cx="130"
@@ -1480,7 +1480,7 @@
         <div class="kpi-sub" id="statMinTime">Awaiting acquisition</div>
       </div>
       <div class="panel kpi-card">
-        <div class="kpi-label">Mean &amp; Dispersion (&mu; &plusmn; &sigma;)</div>
+        <div class="kpi-label">Mean Velocity (&mu;)</div>
         <div class="kpi-val num" id="statAvg">--</div>
         <div class="kpi-sub num" id="statSamples">n = 0 samples</div>
       </div>
@@ -1603,8 +1603,8 @@
               <div class="doc-desc">Switch chart logging between <strong>Live</strong>, <strong>15 Seconds</strong>, <strong>2 Minutes</strong>, or <strong>10 Minutes</strong> (averages readings per interval), clear the buffer, or export a full CSV dataset.</div>
             </div>
             <div class="doc-item">
-              <div class="doc-term"><strong>Mean &amp; Dispersion (&mu; &plusmn; &sigma;)</strong><span class="doc-formula">&sigma; = &radic;(&Sigma;(v&minus;&mu;)&sup2;/n)</span></div>
-              <div class="doc-desc">Reports the arithmetic mean velocity (&mu;) plus standard deviation (&sigma;) across <em>n</em> samples—quantifying wind turbulence and variability.</div>
+              <div class="doc-term"><strong>Mean Velocity (&mu;)</strong><span class="doc-formula">&mu; = &Sigma;v / n</span></div>
+              <div class="doc-desc">Arithmetic average of all wind speed readings recorded across <em>n</em> samples during the active monitoring session.</div>
             </div>
             <div class="doc-item">
               <div class="doc-term"><strong>Min / Peak Gust / Last</strong><span class="doc-formula">Session Extremes</span></div>
@@ -1706,6 +1706,7 @@
     const statusDot = document.getElementById("statusDot");
     const statusText = document.getElementById("statusText");
     const demoToggleBtn = document.getElementById("demoToggleBtn");
+    const stationSourceSub = document.getElementById("stationSourceSub");
 
     const mainSpeedValue = document.getElementById("mainSpeedValue");
     const mainSpeedUnit = document.getElementById("mainSpeedUnit");
@@ -1875,7 +1876,6 @@
       applyTheme(htmlEl.getAttribute("data-theme") === "dark" ? "light" : "dark");
     });
 
-    // Field Manual Modal Events
     openDocsBtn.addEventListener("click", () => docsModal.classList.add("open"));
     closeDocsBtn.addEventListener("click", () => docsModal.classList.remove("open"));
     docsModal.addEventListener("click", (e) => {
@@ -2025,19 +2025,13 @@
           sum += r.mps;
         }
         const avgMps = sum / readings.length;
-        let sqDiffSum = 0;
-        for (const r of readings) {
-          const d = r.mps - avgMps;
-          sqDiffSum += d * d;
-        }
-        const stdMps = Math.sqrt(sqDiffSum / readings.length);
         meanConverted = Number(convert(avgMps).toFixed(3));
 
         statMin.textContent = `${convert(minItem.mps).toFixed(2)} ${unitInfo.label}`;
         statMinTime.textContent = `At ${minItem.label}`;
 
-        statAvg.textContent = `${convert(avgMps).toFixed(2)} ± ${convert(stdMps).toFixed(2)}`;
-        statSamples.textContent = `${unitInfo.label} • n = ${readings.length}`;
+        statAvg.textContent = `${convert(avgMps).toFixed(2)} ${unitInfo.label}`;
+        statSamples.textContent = `n = ${readings.length} sample${readings.length === 1 ? "" : "s"}`;
 
         statMax.textContent = `${convert(maxItem.mps).toFixed(2)} ${unitInfo.label}`;
         statMaxTime.textContent = `At ${maxItem.label}`;
@@ -2160,6 +2154,7 @@
       );
     }
 
+    // Live Net Feed: Open-Meteo API for Wah Cantt / Officers Colony (33.7715 N, 72.7511 E)
     async function fetchWahWind() {
       try {
         const res = await fetch(
@@ -2171,10 +2166,17 @@
         if (typeof speedMs === "number" && !Number.isNaN(speedMs)) {
           wahBaselineMps = Math.max(0.4, speedMs);
           demoCurrentMps = wahBaselineMps;
+          if (isDemo) {
+            stationSourceSub.textContent = "Wah Officers Colony (33.77°N, 72.75°E) • Open-Meteo Live";
+          }
+          return;
         }
       } catch {
         wahBaselineMps = 3.0;
         demoCurrentMps = 3.0;
+        if (isDemo) {
+          stationSourceSub.textContent = "Wah Officers Colony (33.77°N, 72.75°E) • Offline Baseline";
+        }
       }
     }
 
@@ -2185,16 +2187,24 @@
           off(activeRef);
           activeRef = null;
         }
+        // Hide the Demo button immediately once turned ON
+        isDemoUnlocked = false;
+        demoToggleBtn.classList.remove("unlocked", "active");
         demoToggleBtn.textContent = "Demo: On";
-        demoToggleBtn.classList.add("active");
+
+        stationSourceSub.style.display = "block";
+        stationSourceSub.textContent = "Wah Officers Colony (33.77°N, 72.75°E) • Open-Meteo Live";
         setStatus("live", "Live");
 
         await fetchWahWind();
 
+        // Low-dispersion damped laminar breeze around Wah Officers Colony baseline
         const emit = () => {
-          const pull = (wahBaselineMps - demoCurrentMps) * 0.25;
-          const gust = (Math.random() - 0.5) * 0.36;
-          demoCurrentMps = Math.max(0.2, demoCurrentMps + pull + gust);
+          const wave = Math.sin(Date.now() / 6000) * 0.045;
+          const target = wahBaselineMps + wave;
+          const pull = (target - demoCurrentMps) * 0.45;
+          const microNoise = (Math.random() - 0.5) * 0.03;
+          demoCurrentMps = Math.max(0.2, demoCurrentMps + pull + microNoise);
           onIncomingSpeed(demoCurrentMps);
         };
         emit();
@@ -2207,6 +2217,8 @@
         wahRefreshTimer = null;
         demoToggleBtn.textContent = "Demo: Off";
         demoToggleBtn.classList.remove("active");
+        stationSourceSub.style.display = "none";
+        stationSourceSub.textContent = "";
         connectFirebase();
       }
     }
@@ -2229,6 +2241,8 @@
     function verifyPin() {
       if (pinInput.value.trim() === DEMO_PIN) {
         isDemoUnlocked = true;
+        demoToggleBtn.textContent = isDemo ? "Demo: On" : "Demo: Off";
+        demoToggleBtn.classList.toggle("active", isDemo);
         demoToggleBtn.classList.add("unlocked");
         closePinModal();
       } else {
